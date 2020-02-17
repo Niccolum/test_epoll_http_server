@@ -2,15 +2,17 @@ import socket
 import select
 from typing import Tuple
 from pathlib import Path
+import multiprocessing as mp
 
 from socket_http_server.structures import Connection
 
 class HTTPServer:
-    def __init__(self, base_directory='/', port=8080) -> None:
+    def __init__(self, base_directory='/', port=8080, processes=1) -> None:
         self.port = port
         self.base_directory = Path(__file__).resolve() / base_directory
-        self._connections = {}
-        self._url_resolver = {}
+        self.processes = processes
+        self. manager = mp.Manager()
+        self._connections = self.manager.dict()
         self.server_socket = None
         self.epoll = None
 
@@ -42,17 +44,19 @@ class HTTPServer:
 
 
     def _register_new_connection(self) -> None:
-        curr_conn, _ = self.server_socket.accept()
-        curr_conn.setblocking(False)
-        # Подписываемся на события чтения (EPOLLIN) на новом сокете.
-        self.epoll.register(curr_conn.fileno(), select.EPOLLIN)
-        self._connections[curr_conn.fileno()] = Connection(client=curr_conn)
+        with mp.Lock():
+            curr_conn, _ = self.server_socket.accept()
+            curr_conn.setblocking(False)
+            # Подписываемся на события чтения (EPOLLIN) на новом сокете.
+            self.epoll.register(curr_conn.fileno(), select.EPOLLIN)
+            self._connections[curr_conn.fileno()] = Connection(client=curr_conn)
 
 
     def _read_new_data_for_connection(self, fileno: int):
         eols = (b'\n\n', b'\n\r\n')
         curr_conn = self._connections[fileno]
-        curr_conn.raw_request += curr_conn.client.recv(1024)
+        with mp.Lock():
+            curr_conn.raw_request += curr_conn.client.recv(1024)
         if any(eol in curr_conn.raw_request for eol in eols):
             curr_conn.parse_request(self.base_directory)
             self.epoll.modify(fileno, select.EPOLLOUT)
@@ -74,7 +78,6 @@ class HTTPServer:
 
 
     def _loop(self) -> None:
-        print('ready...')
         while True:
             events = self.epoll.poll(1)
             for fileno, event in events:
@@ -94,4 +97,11 @@ class HTTPServer:
 
     def run(self) -> None:
         with self:
-            self._loop()
+            workers = [mp.Process(target=self._loop) for _ in range(self.processes)]
+            for p in workers:
+                p.daemon = True
+                p.start()
+                print(f'Worker {p.name} are ready...')
+
+            for p in workers:
+                p.join()

@@ -71,7 +71,7 @@ def _create_response_headers(body: bytes, content_type: str) -> Dict[str, str]:
         'Date': dt.datetime.now().isoformat(),
         'Content-Type': MIMETYPES[content_type],
         'Content-Length': len(body),
-        'Server': 'Niccolum simpleHTTP webserver',
+        'Server': 'Niccolum_simpleHTTP_webserver',
         'Connection': 'close',
     }
 
