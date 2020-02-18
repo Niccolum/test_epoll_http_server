@@ -3,19 +3,9 @@ import select
 from typing import Tuple
 from pathlib import Path
 import multiprocessing as mp
-from contextlib import contextmanager
-
-
-@contextmanager
-def lockwrapper(lock):
-    try:
-        lock.acquire()
-        yield
-    finally:
-        lock.release()
-
 
 from socket_http_server.structures import Connection
+
 
 class HTTPServer:
     def __init__(self, base_directory='/', port=8080, processes=1) -> None:
@@ -43,15 +33,12 @@ class HTTPServer:
     def __exit__(self, type, val, traceback) -> None:
         self.server_socket.close()
 
-
-    def _register_new_connection(self, epoll: select.epoll, _connections: dict, lock: mp.Lock) -> None:
-        with lockwrapper(lock):
-            curr_conn, _ = self.server_socket.accept()
-            curr_conn.setblocking(False)
+    def _register_new_connection(self, epoll: select.epoll, _connections: dict) -> None:
+        curr_conn, _ = self.server_socket.accept()
+        curr_conn.setblocking(False)
         # Подписываемся на события чтения (EPOLLIN) на новом сокете.
         epoll.register(curr_conn.fileno(), select.EPOLLIN)
         _connections[curr_conn.fileno()] = Connection(client=curr_conn)
-
 
     def _read_new_data_for_connection(self, fileno: int, epoll: select.epoll, _connections: dict):
         eols = (b'\n\n', b'\n\r\n')
@@ -60,7 +47,6 @@ class HTTPServer:
         if any(eol in curr_conn.raw_request for eol in eols):
             curr_conn.parse_request(self.base_directory)
             epoll.modify(fileno, select.EPOLLOUT)
-
 
     def _write_data_for_request(self, fileno: int, epoll: select.epoll, _connections: dict):
         curr_conn = _connections[fileno]
@@ -75,7 +61,7 @@ class HTTPServer:
         _connections[fileno].client.close()
         del _connections[fileno]
 
-    def _loop(self, lock) -> None:
+    def _loop(self) -> None:
         epoll = select.epoll()
         # Подписываемся на события чтения на серверном сокете.
         # Событие чтения происходит в тот момент, когда серверный сокет принимает подключение.
@@ -87,7 +73,7 @@ class HTTPServer:
                 for fileno, event in events:
                     # if new socket session
                     if fileno == self.server_socket.fileno():
-                        self._register_new_connection(epoll, _connections, lock)
+                        self._register_new_connection(epoll, _connections)
                     # Available for read
                     elif event & select.EPOLLIN:
                         self._read_new_data_for_connection(fileno, epoll, _connections)
@@ -101,12 +87,10 @@ class HTTPServer:
             epoll.unregister(self.server_socket.fileno())
             epoll.close()
 
-
     def run(self) -> None:
         with self:
             try:
-                lock = mp.Lock()
-                workers = [mp.Process(target=self._loop, args=(lock,)) for _ in range(self.processes)]
+                workers = [mp.Process(target=self._loop) for _ in range(self.processes)]
                 for p in workers:
                     p.daemon = True
                     p.start()
