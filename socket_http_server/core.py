@@ -1,6 +1,6 @@
 import socket
 import select
-from typing import Tuple
+from typing import Tuple, Dict
 from pathlib import Path
 import multiprocessing as mp
 
@@ -33,14 +33,14 @@ class HTTPServer:
     def __exit__(self, type, val, traceback) -> None:
         self.server_socket.close()
 
-    def _register_new_connection(self, epoll: select.epoll, _connections: dict) -> None:
+    def _register_new_connection(self, epoll: select.epoll, _connections: Dict[int, Connection]) -> None:
         curr_conn, _ = self.server_socket.accept()
         curr_conn.setblocking(False)
         # Подписываемся на события чтения (EPOLLIN) на новом сокете.
         epoll.register(curr_conn.fileno(), select.EPOLLIN)
         _connections[curr_conn.fileno()] = Connection(client=curr_conn)
 
-    def _read_new_data_for_connection(self, fileno: int, epoll: select.epoll, _connections: dict):
+    def _read_new_data_for_connection(self, fileno: int, epoll: select.epoll, _connections: Dict[int, Connection]):
         eols = (b'\n\n', b'\n\r\n')
         curr_conn = _connections[fileno]
         curr_conn.raw_request += curr_conn.client.recv(1024)
@@ -48,7 +48,7 @@ class HTTPServer:
             curr_conn.parse_request(self.base_directory)
             epoll.modify(fileno, select.EPOLLOUT)
 
-    def _write_data_for_request(self, fileno: int, epoll: select.epoll, _connections: dict):
+    def _write_data_for_request(self, fileno: int, epoll: select.epoll, _connections: Dict[int, Connection]):
         curr_conn = _connections[fileno]
         bytes_written = curr_conn.client.send(curr_conn.response.raw)
         curr_conn.response.raw = curr_conn.response.raw[bytes_written:]
@@ -56,7 +56,7 @@ class HTTPServer:
             epoll.modify(fileno, select.EPOLLHUP)
             curr_conn.client.shutdown(socket.SHUT_RDWR)
 
-    def _close_request(self, fileno: int, epoll: select.epoll, _connections: dict):
+    def _close_request(self, fileno: int, epoll: select.epoll, _connections: Dict[int, Connection]):
         epoll.unregister(fileno)
         _connections[fileno].client.close()
         del _connections[fileno]

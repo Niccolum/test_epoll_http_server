@@ -9,7 +9,7 @@ Here is example of realization asynchronous http web server on epoll (select.epo
 Python 3.7+
 
 * Respond to `GET` with status code in `{200,403,404}`
-* Respond to `HEAD` with status code in `{200,404}`
+* Respond to `HEAD` with status code in `{200,403,404}`
 * Respond to all other request methods with status code `405`
 * Directory index file name `index.html`
 * Respond to requests for `/<file>.html` with the contents of `DOCUMENT_ROOT/<file>.html`
@@ -18,7 +18,6 @@ Python 3.7+
   * `Server`
   * `Date`
   * `Connection`
-* Respond with the following additional header fields for all `200` responses to `GET` and `HEAD` requests:
   * `Content-Length`
   * `Content-Type`
 * Respond with correct `Content-Type` for `.html, .css, js, jpg, .jpeg, .png, .gif, .swf`
