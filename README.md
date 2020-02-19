@@ -33,6 +33,8 @@ $ git clone git@github.com:Niccolum/test_epoll_http_server.git
 
 ### Run
 
+#### Console
+
 ```bash
 $ cd /path/to/root/dir
 
@@ -45,9 +47,17 @@ optional arguments:
   -r R        Documents root. Default current directory
 
 
-$ python3.7 httpd.py
+$ python3.7 httpd.py -w 4
 ```
 
+#### Docker
+
+```bash
+$ cd /path/to/root/dir
+
+$ docker image build -t niccolum_socket_http_server:1.0 .
+$ docker container run --publish 8080:8080 --detach --name nshs niccolum_socket_http_server:1.0
+```
 
 ### Unit Testing
 
