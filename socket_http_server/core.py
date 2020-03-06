@@ -53,9 +53,7 @@ class HTTPServer:
 
     def _write_data_for_request(self, fileno: int, epoll: select.epoll, _connections: Dict[int, Connection]):
         curr_conn = _connections[fileno]
-
         chunk = next(curr_conn.response.chunks, None)
-
         if chunk:
             curr_conn.client.send(chunk)
         else:
@@ -67,7 +65,7 @@ class HTTPServer:
         _connections[fileno].client.close()
         del _connections[fileno]
 
-    def _run_loop(self, epoll: select.epoll, _connections: Dict[int, Connection], graceful_shutdown: bool=False):
+    def _run_loop(self, epoll: select.epoll, _connections: Dict[int, Connection], graceful_shutdown: bool = False):
         events = epoll.poll(1)
         for fileno, event in events:
             # if new socket session

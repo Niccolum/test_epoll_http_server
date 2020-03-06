@@ -35,7 +35,7 @@ class Response:
         resp_bytes = response_to_raw(self.headers, self.status_code, request.proto)
         self.raw = resp_bytes
 
-    def _read_in_chunks(self, chunk_size: int=1024):
+    def _read_in_chunks(self, chunk_size: int = 1024) -> bytes:
         headers = self.raw
         yield headers
 

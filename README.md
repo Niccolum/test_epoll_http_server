@@ -189,3 +189,12 @@ Percentage of the requests served within a certain time (ms)
   99%     15
  100%   1439 (longest request)
 ```
+
+### PEP8
+```bash
+# create venv before
+
+$ pip install flake8
+$ cd /path/to/root/dir
+$ flake8 --max-line-length=120 --exclude httptest.py
+```
