@@ -1,10 +1,12 @@
+from __future__ import annotations
 import socket
 import select
-from typing import Tuple, Dict
+from typing import Dict
 from pathlib import Path
 import multiprocessing as mp
 
 from socket_http_server.structures import Connection
+from socket_http_server.utils import read_in_chunks
 
 
 class HTTPServer:
@@ -26,9 +28,9 @@ class HTTPServer:
         _clients_queue = 50
         self.server_socket.listen(_clients_queue)
 
-    def __enter__(self) -> Tuple[socket.socket, select.epoll]:
+    def __enter__(self) -> HTTPServer:
         self._create_server()
-        return self.server_socket
+        return self
 
     def __exit__(self, type, val, traceback) -> None:
         self.server_socket.close()
@@ -50,18 +52,40 @@ class HTTPServer:
 
     def _write_data_for_request(self, fileno: int, epoll: select.epoll, _connections: Dict[int, Connection]):
         curr_conn = _connections[fileno]
-        bytes_written = curr_conn.client.send(curr_conn.response.raw)
-        curr_conn.response.raw = curr_conn.response.raw[bytes_written:]
-        if len(curr_conn.response.raw) == 0:
-            epoll.modify(fileno, select.EPOLLHUP)
-            curr_conn.client.shutdown(socket.SHUT_RDWR)
+
+        headers = curr_conn.response.raw
+        curr_conn.client.send(headers)
+
+        body = curr_conn.response.body
+
+        for chunk in read_in_chunks(body):
+            curr_conn.client.send(chunk)
+
+        epoll.modify(fileno, select.EPOLLHUP)
+        curr_conn.client.shutdown(socket.SHUT_RDWR)
 
     def _close_request(self, fileno: int, epoll: select.epoll, _connections: Dict[int, Connection]):
         epoll.unregister(fileno)
         _connections[fileno].client.close()
         del _connections[fileno]
 
-    def _loop(self) -> None:
+    def _run_loop(self, epoll: select.epoll, _connections: Dict[int, Connection], graceful_shutdown: bool=False):
+        events = epoll.poll(1)
+        for fileno, event in events:
+            # if new socket session
+            if not graceful_shutdown and fileno == self.server_socket.fileno():
+                self._register_new_connection(epoll, _connections)
+            # Available for read
+            elif event & select.EPOLLIN:
+                self._read_new_data_for_connection(fileno, epoll, _connections)
+            # Available for write
+            elif event & select.EPOLLOUT:
+                self._write_data_for_request(fileno, epoll, _connections)
+            # Available for close
+            elif event & select.EPOLLHUP:
+                self._close_request(fileno, epoll, _connections)
+
+    def _run(self) -> None:
         epoll = select.epoll()
         # Подписываемся на события чтения на серверном сокете.
         # Событие чтения происходит в тот момент, когда серверный сокет принимает подключение.
@@ -69,36 +93,25 @@ class HTTPServer:
         _connections = {}
         try:
             while True:
-                events = epoll.poll(1)
-                for fileno, event in events:
-                    # if new socket session
-                    if fileno == self.server_socket.fileno():
-                        self._register_new_connection(epoll, _connections)
-                    # Available for read
-                    elif event & select.EPOLLIN:
-                        self._read_new_data_for_connection(fileno, epoll, _connections)
-                    # Available for write
-                    elif event & select.EPOLLOUT:
-                        self._write_data_for_request(fileno, epoll, _connections)
-                    # Available for close
-                    elif event & select.EPOLLHUP:
-                        self._close_request(fileno, epoll, _connections)
+                self._run_loop(epoll=epoll, _connections=_connections)
         finally:
+            while _connections:
+                self._run_loop(epoll=epoll, _connections=_connections, graceful_shutdown=True)
             epoll.unregister(self.server_socket.fileno())
             epoll.close()
 
     def run(self) -> None:
-        with self:
-            try:
-                workers = [mp.Process(target=self._loop) for _ in range(self.processes)]
-                for p in workers:
-                    p.daemon = True
-                    p.start()
-                    print(f'Worker {p.name} are ready...')
+        workers = [mp.Process(target=self._run) for _ in range(self.processes)]
+        try:
+            for p in workers:
+                p.daemon = True
+                p.start()
+                print(f'Worker {p.name} are ready...')
 
-                for p in workers:
-                    p.join()
+            for p in workers:
+                p.join()
 
-            finally:
-                for p in workers:
-                    p.terminate()
+        finally:
+            for p in workers:
+                p.terminate()
+                print(f'Worker {p.name} has been stopped.')

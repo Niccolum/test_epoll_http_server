@@ -15,12 +15,12 @@ def main():
     doc_root = args.r.lstrip('/')
     directory = BASE_DIR / doc_root
 
-    app = HTTPServer(base_directory=directory, port=8080, processes=args.w)
-    try:
-        print('Starting server, use <Ctrl-C> to stop')
-        app.run()
-    except KeyboardInterrupt:
-        print('Server has been stopped')
+    with HTTPServer(base_directory=directory, port=8080, processes=args.w) as app:
+        try:
+            print('Starting server, use <Ctrl-C> to stop')
+            app.run()
+        except KeyboardInterrupt:
+            print('Server has been stopped')
 
 
 if __name__ == '__main__':
