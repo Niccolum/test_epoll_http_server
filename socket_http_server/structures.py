@@ -28,9 +28,23 @@ class Response:
     status_code: int
     raw: bytes = b''
 
+    def __post_init__(self):
+        self.chunks = self._read_in_chunks()
+
     def create_raw(self, request: Request):
         resp_bytes = response_to_raw(self.headers, self.status_code, request.proto)
         self.raw = resp_bytes
+
+    def _read_in_chunks(self, chunk_size: int=1024):
+        headers = self.raw
+        yield headers
+
+        body = self.body
+        while True:
+            data = body.read(chunk_size)
+            if not data:
+                break
+            yield data
 
 
 @dataclass

@@ -6,7 +6,9 @@ from pathlib import Path
 import multiprocessing as mp
 
 from socket_http_server.structures import Connection
-from socket_http_server.utils import read_in_chunks
+
+
+EOL = (b'\n\n', b'\n\r\n')
 
 
 class HTTPServer:
@@ -43,26 +45,22 @@ class HTTPServer:
         _connections[curr_conn.fileno()] = Connection(client=curr_conn)
 
     def _read_new_data_for_connection(self, fileno: int, epoll: select.epoll, _connections: Dict[int, Connection]):
-        eols = (b'\n\n', b'\n\r\n')
         curr_conn = _connections[fileno]
         curr_conn.raw_request += curr_conn.client.recv(1024)
-        if any(eol in curr_conn.raw_request for eol in eols):
+        if any(eol in curr_conn.raw_request for eol in EOL):
             curr_conn.parse_request(self.base_directory)
             epoll.modify(fileno, select.EPOLLOUT)
 
     def _write_data_for_request(self, fileno: int, epoll: select.epoll, _connections: Dict[int, Connection]):
         curr_conn = _connections[fileno]
 
-        headers = curr_conn.response.raw
-        curr_conn.client.send(headers)
+        chunk = next(curr_conn.response.chunks, None)
 
-        body = curr_conn.response.body
-
-        for chunk in read_in_chunks(body):
+        if chunk:
             curr_conn.client.send(chunk)
-
-        epoll.modify(fileno, select.EPOLLHUP)
-        curr_conn.client.shutdown(socket.SHUT_RDWR)
+        else:
+            epoll.modify(fileno, select.EPOLLHUP)
+            curr_conn.client.shutdown(socket.SHUT_RDWR)
 
     def _close_request(self, fileno: int, epoll: select.epoll, _connections: Dict[int, Connection]):
         epoll.unregister(fileno)
