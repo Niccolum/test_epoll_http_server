@@ -30,7 +30,7 @@ class Response:
 
     def __post_init__(self) -> None:
         self.chunks_processing = self._read_from_chunks()
-        self._chunks_cursor = 0
+        self.chunks_cursor = 0
 
     def create_raw(self, request: Request) -> None:
         resp_headers_bytes = BytesIO(response_to_raw(self.headers, self.status_code, request.proto))
@@ -39,9 +39,9 @@ class Response:
     def _read_from_chunks(self, chunk_size: int = 1024) -> Generator[bytes, None, None]:
         for byte_io_object in self.raw:
             while True:
-                byte_io_object.seek(self._chunks_cursor)
+                byte_io_object.seek(self.chunks_cursor)
                 data = byte_io_object.read(chunk_size)
-                byte_io_object.seek(self._chunks_cursor)
+                byte_io_object.seek(self.chunks_cursor)
                 if not data:
                     break
                 yield data
