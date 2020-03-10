@@ -1,6 +1,6 @@
 import socket
 from io import BytesIO
-from typing import Optional
+from typing import Optional, Iterable, Generator
 from dataclasses import dataclass, field
 from pathlib import Path
 from http import HTTPStatus
@@ -26,25 +26,26 @@ class Response:
     headers: field(default_factory=dict)
     body: BytesIO
     status_code: int
-    raw: bytes = b''
+    raw: Optional[Iterable[BytesIO]] = None
 
-    def __post_init__(self):
-        self.chunks = self._read_in_chunks()
+    def __post_init__(self) -> None:
+        self.chunks_processing = self._read_from_chunks()
+        self._chunks_cursor = 0
 
-    def create_raw(self, request: Request):
-        resp_bytes = response_to_raw(self.headers, self.status_code, request.proto)
-        self.raw = resp_bytes
+    def create_raw(self, request: Request) -> None:
+        resp_headers_bytes = BytesIO(response_to_raw(self.headers, self.status_code, request.proto))
+        self.raw = (resp_headers_bytes, self.body)
 
-    def _read_in_chunks(self, chunk_size: int = 1024) -> bytes:
-        headers = self.raw
-        yield headers
-
-        body = self.body
-        while True:
-            data = body.read(chunk_size)
-            if not data:
-                break
-            yield data
+    def _read_from_chunks(self, chunk_size: int = 1024) -> Generator[bytes, None, None]:
+        for byte_io_object in self.raw:
+            while True:
+                byte_io_object.seek(self._chunks_cursor)
+                data = byte_io_object.read(chunk_size)
+                byte_io_object.seek(self._chunks_cursor)
+                if not data:
+                    break
+                yield data
+            self.chunks_cursor = 0
 
 
 @dataclass

@@ -68,7 +68,7 @@ def _create_response_headers(body: BytesIO, url: str) -> Dict[str, str]:
     }
 
 
-def create_response(status: int, body: BytesIO, url) -> Dict[str, Union[str, Dict[str, str]]]:
+def create_response(status: int, body: BytesIO, url) -> Dict[str, Union[int, BytesIO, Dict[str, str]]]:
     headers = _create_response_headers(body, url)
     response_dict = {
         'headers': headers,

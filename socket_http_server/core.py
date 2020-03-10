@@ -34,7 +34,7 @@ class HTTPServer:
         self._create_server()
         return self
 
-    def __exit__(self, type, val, traceback) -> None:
+    def __exit__(self, type_, val, traceback) -> None:
         self.server_socket.close()
 
     def _register_new_connection(self, epoll: select.epoll, _connections: Dict[int, Connection]) -> None:
@@ -51,16 +51,19 @@ class HTTPServer:
             curr_conn.parse_request(self.base_directory)
             epoll.modify(fileno, select.EPOLLOUT)
 
-    def _write_data_for_request(self, fileno: int, epoll: select.epoll, _connections: Dict[int, Connection]):
+    @staticmethod
+    def _write_data_for_request(fileno: int, epoll: select.epoll, _connections: Dict[int, Connection]):
         curr_conn = _connections[fileno]
-        chunk = next(curr_conn.response.chunks, None)
+        chunk = next(curr_conn.response.chunks_processing, None)
         if chunk:
-            curr_conn.client.send(chunk)
+            bytes_written = curr_conn.client.send(chunk)
+            curr_conn.response.chunks_cursor += bytes_written
         else:
             epoll.modify(fileno, select.EPOLLHUP)
             curr_conn.client.shutdown(socket.SHUT_RDWR)
 
-    def _close_request(self, fileno: int, epoll: select.epoll, _connections: Dict[int, Connection]):
+    @staticmethod
+    def _close_request(fileno: int, epoll: select.epoll, _connections: Dict[int, Connection]):
         epoll.unregister(fileno)
         _connections[fileno].client.close()
         del _connections[fileno]
