@@ -43,6 +43,7 @@ class Response:
                 data = byte_io_object.read(chunk_size)
                 byte_io_object.seek(self.chunks_cursor)
                 if not data:
+                    byte_io_object.close()
                     break
                 yield data
             self.chunks_cursor = 0
