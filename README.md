@@ -198,3 +198,8 @@ $ pip install flake8
 $ cd /path/to/root/dir
 $ flake8 --max-line-length=120 --exclude httptest.py
 ```
+
+### Docker run with tests
+```bash
+sudo bash test_runner.sh
+```
