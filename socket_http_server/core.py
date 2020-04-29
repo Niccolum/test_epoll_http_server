@@ -4,6 +4,8 @@ import select
 from typing import Dict
 from pathlib import Path
 import multiprocessing as mp
+import traceback
+import sys
 
 from socket_http_server.structures import Connection
 
@@ -73,10 +75,13 @@ class ServerWorker:
             while True:
                 self._run_loop()
         finally:
-            while self.connections:
-                self._run_loop(graceful_shutdown=True)
-            self.epoll.unregister(self.server_socket.fileno())
-            self.epoll.close()
+            self._graceful_shutdown()
+
+    def _graceful_shutdown(self) -> None:
+        while self.connections:
+            self._run_loop(graceful_shutdown=True)
+        self.epoll.unregister(self.server_socket.fileno())
+        self.epoll.close()
 
     def _register_new_connection(self) -> None:
         curr_conn, _ = self.server_socket.accept()
@@ -85,14 +90,14 @@ class ServerWorker:
         self.epoll.register(curr_conn.fileno(), select.EPOLLIN)
         self.connections[curr_conn.fileno()] = Connection(client=curr_conn)
 
-    def _read_new_data_for_connection(self, fileno: int):
+    def _read_data_from_request(self, fileno: int) -> None:
         curr_conn = self.connections[fileno]
         curr_conn.raw_request += curr_conn.client.recv(1024)
         if any(eol in curr_conn.raw_request for eol in EOL):
             curr_conn.parse_request(self.base_directory)
             self.epoll.modify(fileno, select.EPOLLOUT)
 
-    def _write_data_for_request(self, fileno: int):
+    def _write_data_to_response(self, fileno: int) -> None:
         curr_conn = self.connections[fileno]
         chunk = next(curr_conn.response.chunks_processing, None)
         if chunk:
@@ -102,23 +107,33 @@ class ServerWorker:
             self.epoll.modify(fileno, select.EPOLLHUP)
             curr_conn.client.shutdown(socket.SHUT_RDWR)
 
-    def _close_request(self, fileno: int):
+    def _close_request(self, fileno: int) -> None:
         self.epoll.unregister(fileno)
         self.connections[fileno].client.close()
         del self.connections[fileno]
 
-    def _run_loop(self, graceful_shutdown: bool = False):
+    def _handle_exception(self, fileno: int) -> None:
+        tb = traceback.format_exc()
+        curr_conn = self.connections[fileno]
+        curr_conn.client.send(tb.encode())
+        traceback.print_exc(file=sys.stderr)
+        self._close_request(fileno)
+
+    def _run_loop(self, graceful_shutdown: bool = False) -> None:
         events = self.epoll.poll(1)
         for fileno, event in events:
-            # if new socket session
-            if not graceful_shutdown and fileno == self.server_socket.fileno():
-                self._register_new_connection()
-            # Available for read
-            elif event & select.EPOLLIN:
-                self._read_new_data_for_connection(fileno)
-            # Available for write
-            elif event & select.EPOLLOUT:
-                self._write_data_for_request(fileno)
-            # Available for close
-            elif event & select.EPOLLHUP:
-                self._close_request(fileno)
+            try:
+                # if new socket session
+                if not graceful_shutdown and fileno == self.server_socket.fileno():
+                    self._register_new_connection()
+                # Available for read
+                elif event & select.EPOLLIN:
+                    self._read_data_from_request(fileno)
+                # Available for write
+                elif event & select.EPOLLOUT:
+                    self._write_data_to_response(fileno)
+                # Available for close
+                elif event & select.EPOLLHUP:
+                    self._close_request(fileno)
+            except Exception:
+                self._handle_exception(fileno)
